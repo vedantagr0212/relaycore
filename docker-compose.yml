@@ -1,5 +1,3 @@
-version: "3.9"
-
 services:
   postgres:
     image: postgres:16-alpine
@@ -35,6 +33,7 @@ services:
 
   relaycore_api:
     build: .
+    image: relaycore:latest
     container_name: relaycore_api
     restart: unless-stopped
     env_file:
@@ -49,7 +48,7 @@ services:
     command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2"]
 
   relaycore_worker:
-    build: .
+    image: relaycore:latest
     container_name: relaycore_worker
     restart: unless-stopped
     env_file:
