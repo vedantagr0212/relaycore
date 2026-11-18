@@ -1,6 +1,6 @@
 # RelayCore — Fault-Tolerant Asynchronous Webhook & Event Delivery Engine
 
-**Author:** Vedant Amit Agrawal ([GitHub](https://github.com/samplespace05/) | [LinkedIn](https://www.linkedin.com/in/vedant-agrawal-0ba2a7325))  
+**Author:** Vedant Amit Agrawal ([GitHub](https://github.com/vedantagr0212/) | [LinkedIn](https://www.linkedin.com/in/vedant-agrawal-0ba2a7325))  
 **Tech Stack:** Python 3.11, FastAPI, PostgreSQL 16, Redis 7 (Lua Scripting), AsyncIO / Multi-Worker Pools, SQLAlchemy, Docker Compose, PyTest, MyPy, Ruff
 
 ---
