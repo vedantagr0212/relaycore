@@ -1,0 +1,491 @@
+﻿<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>RelayCore — Live Operations & Observability Console</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    body { font-family: 'Inter', sans-serif; background-color: #090d16; color: #e2e8f0; }
+    .mono { font-family: 'JetBrains Mono', monospace; }
+    .card { background: #111827; border: 1px solid #1e293b; border-radius: 0.75rem; }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col">
+  <!-- Top Bar -->
+  <header class="border-b border-slate-800 bg-slate-950/90 sticky top-0 z-30 px-6 py-3.5 flex flex-wrap items-center justify-between gap-4">
+    <div class="flex items-center gap-3">
+      <div class="h-9 w-9 rounded-lg bg-indigo-600 flex items-center justify-center font-bold text-white shadow">RC</div>
+      <div>
+        <div class="flex items-center gap-2">
+          <h1 class="font-bold text-base tracking-tight text-white">RelayCore Control Plane</h1>
+          <span class="text-[11px] mono px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/30" id="conn-badge">LIVE FASTAPI BACKEND</span>
+        </div>
+        <p class="text-xs text-slate-400">Transactional Outbox (`FOR UPDATE SKIP LOCKED`) • HMAC-SHA256 • Redis Token Bucket • 3-State Circuit Breaker</p>
+      </div>
+    </div>
+    <div class="flex items-center gap-2.5">
+      <button onclick="seedDemoTraffic()" class="px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition">
+        ⚡ Seed Multi-Channel Traffic
+      </button>
+      <button onclick="triggerWorkerBatch()" class="px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white shadow transition">
+        ▶ Run Worker Batch (`SKIP LOCKED`)
+      </button>
+      <button onclick="replayAllDLQ()" class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/30 transition">
+        ↻ Replay All DLQ
+      </button>
+      <a href="/docs" target="_blank" class="px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-900 hover:bg-slate-800 text-indigo-400 border border-slate-800 transition">
+        Swagger `/docs` ↗
+      </a>
+    </div>
+  </header>
+
+  <!-- Main Content -->
+  <main class="max-w-[1600px] w-full mx-auto px-6 py-6 space-y-6 flex-1">
+    <!-- Status Banner -->
+    <div id="toast" class="hidden px-4 py-2.5 rounded-lg border text-xs mono flex items-center justify-between"></div>
+
+    <!-- KPI Strip -->
+    <div class="grid grid-cols-2 md:grid-cols-6 gap-4">
+      <div class="card p-4">
+        <div class="text-xs text-slate-400">PENDING / QUEUED</div>
+        <div class="text-2xl font-bold text-sky-400 mono mt-1" id="kpi-pending">0</div>
+        <div class="text-[11px] text-slate-500 mt-1">Awaiting worker poll</div>
+      </div>
+      <div class="card p-4">
+        <div class="text-xs text-slate-400">RETRY SCHEDULED</div>
+        <div class="text-2xl font-bold text-amber-400 mono mt-1" id="kpi-retry">0</div>
+        <div class="text-[11px] text-slate-500 mt-1">Exponential backoff + jitter</div>
+      </div>
+      <div class="card p-4">
+        <div class="text-xs text-slate-400">DELIVERED (2XX / 250)</div>
+        <div class="text-2xl font-bold text-emerald-400 mono mt-1" id="kpi-delivered">0</div>
+        <div class="text-[11px] text-slate-500 mt-1">Cryptographically verified</div>
+      </div>
+      <div class="card p-4">
+        <div class="text-xs text-slate-400">DEAD-LETTER QUEUE</div>
+        <div class="text-2xl font-bold text-rose-400 mono mt-1" id="kpi-dlq">0</div>
+        <div class="text-[11px] text-slate-500 mt-1">Exhausted or Fatal 422/550</div>
+      </div>
+      <div class="card p-4">
+        <div class="text-xs text-slate-400">TOTAL ATTEMPTS</div>
+        <div class="text-2xl font-bold text-indigo-400 mono mt-1" id="kpi-attempts">0</div>
+        <div class="text-[11px] text-slate-500 mt-1">ACID audit log entries</div>
+      </div>
+      <div class="card p-4">
+        <div class="text-xs text-slate-400">DUPLICATE DELIVERIES</div>
+        <div class="text-2xl font-bold text-emerald-400 mono mt-1" id="kpi-dups">0</div>
+        <div class="text-[11px] text-slate-500 mt-1">Idempotency guarantee</div>
+      </div>
+    </div>
+
+    <!-- Middle 3-Column Grid: Ingest Form + Chaos Controls + Circuit Breakers -->
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+      <!-- Column 1: Event Ingestion & Idempotency Tester -->
+      <div class="card p-5 lg:col-span-4 space-y-3.5">
+        <div class="flex items-center justify-between border-b border-slate-800 pb-2.5">
+          <h2 class="font-semibold text-sm text-white">1. Ingest Event (`POST /v1/events`)</h2>
+          <button onclick="generateNewIdemKey()" class="text-[11px] text-indigo-400 hover:underline mono">New Idempotency Key</button>
+        </div>
+        <div class="grid grid-cols-2 gap-2.5 text-xs">
+          <div>
+            <label class="text-slate-400 block mb-1">Tenant ID</label>
+            <input id="f-tenant" value="zeta_marketing_prod" class="w-full bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 mono text-white" />
+          </div>
+          <div>
+            <label class="text-slate-400 block mb-1">Idempotency Key</label>
+            <input id="f-idem" value="idem_live_2026_001" class="w-full bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 mono text-amber-300" />
+          </div>
+        </div>
+        <div class="grid grid-cols-3 gap-2.5 text-xs">
+          <div>
+            <label class="text-slate-400 block mb-1">Channel Strategy</label>
+            <select id="f-channel" onchange="onChannelPresetChange()" class="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1.5 mono text-white">
+              <option value="WEBHOOK">WEBHOOK</option>
+              <option value="SLACK">SLACK</option>
+              <option value="EMAIL">EMAIL (SMTP)</option>
+            </select>
+          </div>
+          <div>
+            <label class="text-slate-400 block mb-1">Event Type</label>
+            <input id="f-type" value="payment.captured" class="w-full bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 mono text-white" />
+          </div>
+          <div>
+            <label class="text-slate-400 block mb-1">Max Retries</label>
+            <input id="f-retries" type="number" value="2" min="0" max="10" class="w-full bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 mono text-white" />
+          </div>
+        </div>
+        <div class="text-xs">
+          <label class="text-slate-400 block mb-1">Target Destination (Preset or Custom)</label>
+          <select id="f-dest" class="w-full bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 mono text-sky-300">
+            <option value="http://localhost:8000/mock-target/healthy">http://localhost:8000/mock-target/healthy (200 OK + HMAC Verify)</option>
+            <option value="http://localhost:8000/mock-target/flaky">http://localhost:8000/mock-target/flaky (Fails 2x 503 -> 3rd 200 OK)</option>
+            <option value="http://localhost:8000/mock-target/rate-limited">http://localhost:8000/mock-target/rate-limited (429 Retry-After: 3s)</option>
+            <option value="http://localhost:8000/mock-target/outage">http://localhost:8000/mock-target/outage (Always 503 -> Trips Circuit & DLQ)</option>
+            <option value="http://localhost:8000/mock-target/fatal-422">http://localhost:8000/mock-target/fatal-422 (Fatal 422 -> Direct DLQ)</option>
+            <option value="http://localhost:8000/mock-target/slack">http://localhost:8000/mock-target/slack (Slack Block Kit Receiver)</option>
+            <option value="vedant@nitw.ac.in">vedant@nitw.ac.in (SMTP 250 OK + DKIM MIME)</option>
+            <option value="ops@throttled-mx.example.com">ops@throttled-mx.example.com (SMTP 421 Greylisted)</option>
+            <option value="hardbounce@invalid-domain.example.com">hardbounce@invalid-domain.example.com (SMTP 550 Hard Bounce -> DLQ)</option>
+          </select>
+        </div>
+        <div class="text-xs">
+          <label class="text-slate-400 block mb-1">JSON Payload</label>
+          <textarea id="f-payload" rows="2" class="w-full bg-slate-900 border border-slate-700 rounded p-2 mono text-xs text-slate-200">{"order_id": "ORD-9921", "amount_inr": 29900, "subject": "RelayCore Alert"}</textarea>
+        </div>
+        <div class="flex gap-2 pt-1">
+          <button onclick="submitIngest(false)" class="flex-1 py-2 rounded-lg text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 text-white transition">
+            Send Event (New Key)
+          </button>
+          <button onclick="submitIngest(true)" class="flex-1 py-2 rounded-lg text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-amber-300 border border-amber-500/30 transition">
+            Resend Same Key (Test 200 Replay)
+          </button>
+        </div>
+      </div>
+
+      <!-- Column 2: Stateful Partner Chaos Controller -->
+      <div class="card p-5 lg:col-span-4 space-y-3">
+        <div class="flex items-center justify-between border-b border-slate-800 pb-2.5">
+          <h2 class="font-semibold text-sm text-white">2. Partner Chaos Routes (`/mock-target/*`)</h2>
+          <span class="text-[11px] text-slate-400 mono">Click to toggle live behavior</span>
+        </div>
+        <div id="chaos-routes-list" class="space-y-2 text-xs"></div>
+      </div>
+
+      <!-- Column 3: 3-State Endpoint Circuit Breakers & SMTP Spool -->
+      <div class="card p-5 lg:col-span-4 space-y-3">
+        <div class="flex items-center justify-between border-b border-slate-800 pb-2.5">
+          <h2 class="font-semibold text-sm text-white">3. Endpoint Circuit Breakers & SMTP Spool</h2>
+          <span class="text-[11px] text-slate-400 mono" id="smtp-count-badge">SMTP Spooled: 0</span>
+        </div>
+        <div id="cb-list" class="space-y-2 text-xs max-h-40 overflow-y-auto"></div>
+        <div class="border-t border-slate-800 pt-2">
+          <div class="text-xs font-medium text-slate-300 mb-1.5">Spooled RFC-5322 / DKIM Emails</div>
+          <div id="smtp-list" class="space-y-1.5 text-[11px] mono max-h-28 overflow-y-auto text-slate-400"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Bottom Grid: Event Queue Table + Attempt Audit Inspector -->
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+      <div class="card p-5 lg:col-span-8">
+        <div class="flex items-center justify-between mb-3">
+          <h2 class="font-semibold text-sm text-white">Transactional Event Queue (`delivery_events`)</h2>
+          <span class="text-xs text-slate-400 mono">Click any row to inspect ACID attempt logs & HMAC / SMTP transcript</span>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-left border-collapse text-xs">
+            <thead>
+              <tr class="border-b border-slate-800 text-slate-400">
+                <th class="py-2 px-2">Event ID</th>
+                <th class="py-2 px-2">Tenant / Idempotency Key</th>
+                <th class="py-2 px-2">Channel & Destination</th>
+                <th class="py-2 px-2">Status</th>
+                <th class="py-2 px-2">Retries</th>
+                <th class="py-2 px-2 text-right">Action</th>
+              </tr>
+            </thead>
+            <tbody id="events-tbody" class="divide-y divide-slate-800/70 mono"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Right Inspector: Immutable Attempt Logs -->
+      <div class="card p-5 lg:col-span-4 space-y-3">
+        <div class="border-b border-slate-800 pb-2.5 flex items-center justify-between">
+          <h2 class="font-semibold text-sm text-white">Immutable Attempt Audit Trail</h2>
+          <span id="inspected-id" class="text-[11px] mono text-indigo-400">Select an event</span>
+        </div>
+        <div id="attempt-inspector" class="space-y-2.5 text-xs max-h-[360px] overflow-y-auto">
+          <div class="text-slate-500 text-xs py-8 text-center">Click any event row on the left to inspect its delivery attempts, latency, HTTP/SMTP status codes, and error categories.</div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    let selectedEventId = null;
+    let idemCounter = 100;
+
+    function showToast(msg, isWarn = false) {
+      const el = document.getElementById('toast');
+      el.className = `px-4 py-2.5 rounded-lg border text-xs mono flex items-center justify-between ${
+        isWarn ? 'bg-amber-500/10 border-amber-500/40 text-amber-300' : 'bg-emerald-500/10 border-emerald-500/40 text-emerald-300'
+      }`;
+      el.innerHTML = `<span>${msg}</span><button onclick="this.parentElement.classList.add('hidden')" class="text-slate-400 hover:text-white">✕</button>`;
+      el.classList.remove('hidden');
+    }
+
+    function generateNewIdemKey() {
+      idemCounter += 1;
+      document.getElementById('f-idem').value = `idem_live_2026_${idemCounter}`;
+    }
+
+    function onChannelPresetChange() {
+      const ch = document.getElementById('f-channel').value;
+      const dest = document.getElementById('f-dest');
+      if (ch === 'SLACK') dest.value = 'http://localhost:8000/mock-target/slack';
+      else if (ch === 'EMAIL') dest.value = 'vedant@nitw.ac.in';
+      else dest.value = 'http://localhost:8000/mock-target/flaky';
+    }
+
+    async function submitIngest(keepSameKey) {
+      if (!keepSameKey) generateNewIdemKey();
+      let parsedPayload = {};
+      try {
+        parsedPayload = JSON.parse(document.getElementById('f-payload').value);
+      } catch (e) {
+        showToast('Invalid JSON in payload field', true);
+        return;
+      }
+      const body = {
+        tenant_id: document.getElementById('f-tenant').value.trim(),
+        idempotency_key: document.getElementById('f-idem').value.trim(),
+        event_type: document.getElementById('f-type').value.trim(),
+        channel: document.getElementById('f-channel').value,
+        destination: document.getElementById('f-dest').value,
+        payload: parsedPayload,
+        max_retries: parseInt(document.getElementById('f-retries').value || '2', 10)
+      };
+      const res = await fetch('/v1/events', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+      const data = await res.json();
+      if (res.status === 200 && data.is_idempotent_replay) {
+        showToast(`HTTP 200 OK (Idempotent Replay Deduped): Event ${data.event_id.slice(0,8)} returned without duplicate insert!`, true);
+      } else if (res.status === 202) {
+        showToast(`HTTP 202 Accepted: Ingested Event ${data.event_id.slice(0,8)} in PENDING state.`);
+      } else {
+        showToast(`Error ${res.status}: ${JSON.stringify(data)}`, true);
+      }
+      selectedEventId = data.event_id || selectedEventId;
+      await refreshAll();
+    }
+
+    async function triggerWorkerBatch() {
+      const res = await fetch('/v1/workers/run-once?batch_size=25', { method: 'POST' });
+      const s = await res.json();
+      showToast(
+        `Worker Batch Complete: Claimed=${s.claimed_count} | Delivered=${s.delivered_count} | Retried=${s.retry_scheduled_count} | DLQ=${s.dead_lettered_count} | CB-FastFail=${s.deferred_by_circuit_breaker}`
+      );
+      await refreshAll();
+    }
+
+    async function replaySingleDLQ(eventId) {
+      const res = await fetch(`/v1/dlq/${eventId}/replay`, { method: 'POST' });
+      if (res.ok) {
+        showToast(`Replayed DLQ event ${eventId.slice(0,8)} -> PENDING (retry_count reset to 0).`);
+        await refreshAll();
+      }
+    }
+
+    async function replayAllDLQ() {
+      const res = await fetch('/v1/dlq/replay-batch', { method: 'POST' });
+      const data = await res.json();
+      showToast(`Bulk DLQ Replay: ${data.replayed_count} event(s) transitioned from DEAD_LETTER -> PENDING.`);
+      await refreshAll();
+    }
+
+    async function toggleChaosMode(routePath, currentMode) {
+      const nextMode = currentMode === 'HEALTHY_200' ? 'ALWAYS_503_OUTAGE' : 'HEALTHY_200';
+      await fetch('/v1/chaos/configure', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ route_path: routePath, mode: nextMode })
+      });
+      showToast(`Updated ${routePath} -> ${nextMode}`);
+      await refreshAll();
+    }
+
+    async function seedDemoTraffic() {
+      const ts = Date.now();
+      const samples = [
+        {
+          tenant_id: 'zeta_cdp_prod',
+          idempotency_key: `seed_healthy_${ts}`,
+          event_type: 'payment.captured',
+          channel: 'WEBHOOK',
+          destination: 'http://localhost:8000/mock-target/healthy',
+          payload: { order_id: 'ORD-101', amount_inr: 18500 },
+          max_retries: 3
+        },
+        {
+          tenant_id: 'zeta_cdp_prod',
+          idempotency_key: `seed_flaky_${ts}`,
+          event_type: 'campaign.webhook.triggered',
+          channel: 'WEBHOOK',
+          destination: 'http://localhost:8000/mock-target/flaky',
+          payload: { campaign_id: 'CMP-88', segment: 'high_ltv' },
+          max_retries: 3
+        },
+        {
+          tenant_id: 'zeta_alerts',
+          idempotency_key: `seed_slack_${ts}`,
+          event_type: 'slo.burn_rate.alert',
+          channel: 'SLACK',
+          destination: 'http://localhost:8000/mock-target/slack',
+          payload: { service: 'checkout-api', p99_ms: 820 },
+          max_retries: 2
+        },
+        {
+          tenant_id: 'zeta_crm',
+          idempotency_key: `seed_email_ok_${ts}`,
+          event_type: 'invoice.generated',
+          channel: 'EMAIL',
+          destination: 'vedant@nitw.ac.in',
+          payload: { subject: 'Your Zeta Global Invoice #901', total_inr: 45000 },
+          max_retries: 2
+        },
+        {
+          tenant_id: 'zeta_ billing',
+          idempotency_key: `seed_fatal_${ts}`,
+          event_type: 'schema.invalid.test',
+          channel: 'WEBHOOK',
+          destination: 'http://localhost:8000/mock-target/fatal-422',
+          payload: { malformed: true },
+          max_retries: 4
+        }
+      ];
+      samples[4].tenant_id = 'zeta_billing';
+      for (const s of samples) {
+        await fetch('/v1/events', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(s)
+        });
+      }
+      showToast('Seeded 5 multi-channel events (Healthy Webhook, Flaky 503->200, Slack Block Kit, SMTP MIME Email, and Fatal 422 DLQ). Click "Run Worker Batch"!');
+      await refreshAll();
+    }
+
+    function statusBadge(st) {
+      const map = {
+        PENDING: 'bg-sky-500/15 text-sky-300 border-sky-500/30',
+        PROCESSING: 'bg-indigo-500/15 text-indigo-300 border-indigo-500/30',
+        RETRY_SCHEDULED: 'bg-amber-500/15 text-amber-300 border-amber-500/30',
+        DELIVERED: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30',
+        DEAD_LETTER: 'bg-rose-500/15 text-rose-300 border-rose-500/30'
+      };
+      return `<span class="px-2 py-0.5 rounded border text-[10px] font-semibold ${map[st] || ''}">${st}</span>`;
+    }
+
+    async function selectEvent(eventId) {
+      selectedEventId = eventId;
+      const res = await fetch(`/v1/events/${eventId}`);
+      if (!res.ok) return;
+      const ev = await res.json();
+      document.getElementById('inspected-id').textContent = `${ev.event_id.slice(0, 8)} (${ev.channel})`;
+      const box = document.getElementById('attempt-inspector');
+      if (!ev.attempts || ev.attempts.length === 0) {
+        box.innerHTML = `<div class="p-3 rounded bg-slate-900 border border-slate-800 text-slate-400">No delivery attempts executed yet. Click <b>Run Worker Batch</b> above.</div>`;
+        return;
+      }
+      box.innerHTML = ev.attempts.map(a => `
+        <div class="p-3 rounded-lg bg-slate-900/90 border border-slate-800 space-y-1">
+          <div class="flex items-center justify-between">
+            <span class="font-semibold text-white">Attempt #${a.attempt_number}</span>
+            <span class="mono text-[11px] ${a.status_code >= 200 && a.status_code < 300 ? 'text-emerald-400' : 'text-rose-400'}">
+              HTTP/SMTP ${a.status_code ?? 'GUARD'} • ${a.latency_ms} ms
+            </span>
+          </div>
+          ${a.error_category ? `<div class="text-[11px] text-amber-300 mono">Category: ${a.error_category}</div>` : ''}
+          <div class="text-[11px] text-slate-400 mono break-all">${a.response_excerpt || 'OK'}</div>
+        </div>
+      `).join('');
+    }
+
+    async function refreshAll() {
+      const [dashRes, evRes] = await Promise.all([
+        fetch('/v1/observability/dashboard'),
+        fetch('/v1/events?limit=40')
+      ]);
+      const dash = await dashRes.json();
+      const evData = await evRes.json();
+
+      const byStatus = dash.metrics.events_by_status || {};
+      document.getElementById('kpi-pending').textContent = byStatus.PENDING || 0;
+      document.getElementById('kpi-retry').textContent = byStatus.RETRY_SCHEDULED || 0;
+      document.getElementById('kpi-delivered').textContent = byStatus.DELIVERED || 0;
+      document.getElementById('kpi-dlq').textContent = byStatus.DEAD_LETTER || 0;
+      document.getElementById('kpi-attempts').textContent = dash.metrics.total_delivery_attempts || 0;
+      document.getElementById('kpi-dups').textContent = dash.chaos_receiver_audit.duplicate_deliveries_detected || 0;
+
+      // Render Chaos Routes
+      const modes = dash.chaos_receiver_audit.active_route_modes || {};
+      document.getElementById('chaos-routes-list').innerHTML = Object.entries(modes).map(([route, mode]) => `
+        <div class="flex items-center justify-between p-2 rounded bg-slate-900 border border-slate-800">
+          <span class="mono text-slate-300">${route}</span>
+          <button onclick="toggleChaosMode('${route}', '${mode}')" class="px-2 py-0.5 rounded text-[10px] font-semibold mono border ${
+            mode === 'HEALTHY_200' ? 'bg-emerald-500/10 text-emerald-300 border-emerald-500/30' : 'bg-rose-500/15 text-rose-300 border-rose-500/30'
+          }">${mode} ⇄</button>
+        </div>
+      `).join('');
+
+      // Render Circuit Breakers
+      const cbs = dash.circuit_breakers || [];
+      document.getElementById('cb-list').innerHTML = cbs.length === 0
+        ? `<div class="text-slate-500 text-xs py-2">No circuit breaker targets active yet.</div>`
+        : cbs.map(c => `
+          <div class="flex items-center justify-between p-2 rounded bg-slate-900 border border-slate-800">
+            <div>
+              <div class="mono text-slate-200 text-[11px]">${c.target_key}</div>
+              <div class="text-[10px] text-slate-400">Consecutive Failures: ${c.consecutive_failures} | Trips: ${c.total_trips}</div>
+            </div>
+            <span class="px-2 py-0.5 rounded text-[10px] font-bold mono ${
+              c.state === 'CLOSED' ? 'bg-emerald-500/15 text-emerald-300' : c.state === 'OPEN' ? 'bg-rose-500/20 text-rose-300' : 'bg-amber-500/20 text-amber-300'
+            }">${c.state}</span>
+          </div>
+        `).join('');
+
+      // Render Spooled SMTP Emails
+      const emails = dash.smtp_spooled_messages || [];
+      document.getElementById('smtp-count-badge').textContent = `SMTP Spooled: ${emails.length}`;
+      document.getElementById('smtp-list').innerHTML = emails.length === 0
+        ? `<div class="text-slate-500">No MIME emails spooled yet.</div>`
+        : emails.map(m => `
+          <div class="p-1.5 rounded bg-slate-900 border border-slate-800">
+            <span class="text-emerald-400">[250 OK • ${m.queue_id}]</span> To: <span class="text-white">${m.recipient}</span> — ${m.subject}
+          </div>
+        `).join('');
+
+      // Render Events Table
+      const items = evData.items || [];
+      const tbody = document.getElementById('events-tbody');
+      tbody.innerHTML = items.length === 0
+        ? `<tr><td colspan="6" class="py-8 text-center text-slate-500">Queue is empty. Click <b>⚡ Seed Multi-Channel Traffic</b> above to populate events.</td></tr>`
+        : items.map(ev => `
+          <tr onclick="selectEvent('${ev.event_id}')" class="hover:bg-slate-800/60 cursor-pointer transition ${selectedEventId === ev.event_id ? 'bg-indigo-950/40' : ''}">
+            <td class="py-2.5 px-2 text-indigo-300">${ev.event_id.slice(0, 8)}…</td>
+            <td class="py-2.5 px-2">
+              <div class="text-white">${ev.tenant_id}</div>
+              <div class="text-[10px] text-slate-400">${ev.idempotency_key}</div>
+            </td>
+            <td class="py-2.5 px-2">
+              <span class="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 mr-1">${ev.channel}</span>
+              <span class="text-slate-300 text-[11px]">${ev.destination.replace('http://localhost:8000', '')}</span>
+            </td>
+            <td class="py-2.5 px-2">${statusBadge(ev.status)}</td>
+            <td class="py-2.5 px-2 text-slate-300">${ev.retry_count} / ${ev.max_retries}</td>
+            <td class="py-2.5 px-2 text-right">
+              ${ev.status === 'DEAD_LETTER'
+                ? `<button onclick="event.stopPropagation(); replaySingleDLQ('${ev.event_id}')" class="px-2 py-0.5 rounded bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/30 text-[10px]">Replay DLQ</button>`
+                : `<span class="text-slate-500 text-[10px]">Inspect →</span>`}
+            </td>
+          </tr>
+        `).join('');
+
+      if (selectedEventId) {
+        await selectEvent(selectedEventId);
+      } else if (items.length > 0) {
+        await selectEvent(items[0].event_id);
+      }
+    }
+
+    refreshAll();
+    setInterval(refreshAll, 3000);
+  </script>
+</body>
+</html>

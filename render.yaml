@@ -1,0 +1,13 @@
+﻿services:
+  - type: web
+    name: relaycore-engine
+    runtime: docker
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: ENABLE_EMBEDDED_WORKER
+        value: "true"
+      - key: WORKER_POLL_INTERVAL_SEC
+        value: "3.0"
+      - key: SQLITE_FALLBACK_PATH
+        value: "/tmp/relaycore_runtime.db"
