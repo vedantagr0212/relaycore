@@ -1,4 +1,4 @@
-import json
+﻿import json
 import unittest
 from typing import Dict, Tuple
 
@@ -31,11 +31,11 @@ class TestPhase2ResilienceAndStrategies(unittest.TestCase):
         limiter = TokenBucketRateLimiter(time_fn=clock)
 
         for expected_rem in [2.0, 1.0, 0.0]:
-            dec = limiter.acquire("tenant_zeta", capacity=3, refill_rate_per_sec=2.0)
+            dec = limiter.acquire("tenant_finverse", capacity=3, refill_rate_per_sec=2.0)
             self.assertTrue(dec.allowed)
             self.assertAlmostEqual(dec.remaining_tokens, expected_rem)
 
-        throttled = limiter.acquire("tenant_zeta", capacity=3, refill_rate_per_sec=2.0)
+        throttled = limiter.acquire("tenant_finverse", capacity=3, refill_rate_per_sec=2.0)
         self.assertFalse(throttled.allowed)
         self.assertAlmostEqual(throttled.retry_after_seconds, 0.5, places=2)
 
@@ -43,7 +43,7 @@ class TestPhase2ResilienceAndStrategies(unittest.TestCase):
         self.assertTrue(other_tenant.allowed)
 
         clock.advance(0.5)
-        recovered = limiter.acquire("tenant_zeta", capacity=3, refill_rate_per_sec=2.0)
+        recovered = limiter.acquire("tenant_finverse", capacity=3, refill_rate_per_sec=2.0)
         self.assertTrue(recovered.allowed)
         self.assertAlmostEqual(recovered.remaining_tokens, 0.0)
 
@@ -95,16 +95,16 @@ class TestPhase2ResilienceAndStrategies(unittest.TestCase):
             return 200, '{"ok":true}', {}
 
         registry = DeliveryStrategyRegistry(http_transport=mock_transport)
-        secret = "whsec_zeta_signing_key_999"
+        secret = "whsec_acme_signing_key_999"
         event_row = {
             "event_id": "evt_1001",
-            "tenant_id": "zeta_global",
+            "tenant_id": "acme_commerce",
             "idempotency_key": "idem_991122",
             "event_type": "order.completed",
             "channel": "WEBHOOK",
             "destination": "https://client.example.com/webhooks/orders",
             "payload_json": json.dumps({"order_id": "ORD-55", "total": 1250.0}, sort_keys=True),
-            "custom_headers_json": json.dumps({"X-Custom-Source": "ZetaHub"}),
+            "custom_headers_json": json.dumps({"X-Custom-Source": "AcmeCore"}),
             "signing_secret": secret,
             "retry_count": 0,
         }
@@ -117,7 +117,7 @@ class TestPhase2ResilienceAndStrategies(unittest.TestCase):
         self.assertTrue(
             verify_webhook_signature(sent_body, sent_headers["X-RelayCore-Signature"], secret)
         )
-        self.assertEqual(sent_headers["X-Custom-Source"], "ZetaHub")
+        self.assertEqual(sent_headers["X-Custom-Source"], "AcmeCore")
 
         event_row["destination"] = "https://client.example.com/rate-limit"
         rl_res = registry.get_strategy(ChannelType.WEBHOOK).dispatch(event_row)
@@ -141,7 +141,7 @@ class TestPhase2ResilienceAndStrategies(unittest.TestCase):
 
         base_event = {
             "event_id": "evt_email_01",
-            "tenant_id": "zeta_crm",
+            "tenant_id": "nexus_crm",
             "idempotency_key": "idem_email_01",
             "event_type": "user.welcome",
             "channel": "EMAIL",

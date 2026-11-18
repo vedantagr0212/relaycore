@@ -91,7 +91,7 @@
         <div class="grid grid-cols-2 gap-2.5 text-xs">
           <div>
             <label class="text-slate-400 block mb-1">Tenant ID</label>
-            <input id="f-tenant" value="zeta_marketing_prod" class="w-full bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 mono text-white" />
+            <input id="f-tenant" value="acme_payments_prod" class="w-full bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 mono text-white" />
           </div>
           <div>
             <label class="text-slate-400 block mb-1">Idempotency Key</label>
@@ -304,7 +304,7 @@
       const ts = Date.now();
       const samples = [
         {
-          tenant_id: 'zeta_cdp_prod',
+          tenant_id: 'finverse_checkout',
           idempotency_key: `seed_healthy_${ts}`,
           event_type: 'payment.captured',
           channel: 'WEBHOOK',
@@ -313,7 +313,7 @@
           max_retries: 3
         },
         {
-          tenant_id: 'zeta_cdp_prod',
+          tenant_id: 'finverse_checkout',
           idempotency_key: `seed_flaky_${ts}`,
           event_type: 'campaign.webhook.triggered',
           channel: 'WEBHOOK',
@@ -322,7 +322,7 @@
           max_retries: 3
         },
         {
-          tenant_id: 'zeta_alerts',
+          tenant_id: 'cloudscale_sre',
           idempotency_key: `seed_slack_${ts}`,
           event_type: 'slo.burn_rate.alert',
           channel: 'SLACK',
@@ -331,16 +331,16 @@
           max_retries: 2
         },
         {
-          tenant_id: 'zeta_crm',
+          tenant_id: 'nexus_crm',
           idempotency_key: `seed_email_ok_${ts}`,
           event_type: 'invoice.generated',
           channel: 'EMAIL',
           destination: 'vedant@nitw.ac.in',
-          payload: { subject: 'Your Zeta Global Invoice #901', total_inr: 45000 },
+          payload: { subject: 'Your Finverse Merchant Invoice #901', total_inr: 45000 },
           max_retries: 2
         },
         {
-          tenant_id: 'zeta_ billing',
+          tenant_id: 'atlas_billing',
           idempotency_key: `seed_fatal_${ts}`,
           event_type: 'schema.invalid.test',
           channel: 'WEBHOOK',
@@ -349,7 +349,7 @@
           max_retries: 4
         }
       ];
-      samples[4].tenant_id = 'zeta_billing';
+      samples[4].tenant_id = 'atlas_billing';
       for (const s of samples) {
         await fetch('/v1/events', {
           method: 'POST',

@@ -1,4 +1,4 @@
-# RelayCore — Fault-Tolerant Asynchronous Webhook & Event Delivery Engine
+﻿# RelayCore — Fault-Tolerant Asynchronous Webhook & Event Delivery Engine
 
 **Author:** Vedant Amit Agrawal ([GitHub](https://github.com/vedantagr0212/) | [LinkedIn](https://www.linkedin.com/in/vedant-agrawal-0ba2a7325))  
 **Tech Stack:** Python 3.11, FastAPI, PostgreSQL 16, Redis 7 (Lua Scripting), AsyncIO / Multi-Worker Pools, SQLAlchemy, Docker Compose, PyTest, MyPy, Ruff
@@ -181,7 +181,7 @@ uvicorn app.main:app --reload --port 8000
 curl -X POST http://localhost:8000/v1/events \
   -H "Content-Type: application/json" \
   -d '{
-    "tenant_id": "zeta_marketing_prod",
+    "tenant_id": "acme_payments_prod",
     "idempotency_key": "evt_demo_2026_01",
     "event_type": "campaign.conversion.recorded",
     "channel": "WEBHOOK",
@@ -198,7 +198,7 @@ curl -X POST http://localhost:8000/v1/events \
 curl -X POST http://localhost:8000/v1/events \
   -H "Content-Type: application/json" \
   -d '{
-    "tenant_id": "zeta_marketing_prod",
+    "tenant_id": "acme_payments_prod",
     "idempotency_key": "evt_outage_01",
     "event_type": "order.created",
     "channel": "WEBHOOK",
@@ -208,7 +208,7 @@ curl -X POST http://localhost:8000/v1/events \
   }'
 
 # 2. Inspect Dead-Letter Queue (DLQ) after retries exhaust
-curl http://localhost:8000/v1/dlq?tenant_id=zeta_marketing_prod
+curl http://localhost:8000/v1/dlq?tenant_id=acme_payments_prod
 
 # 3. Recover downstream endpoint from ALWAYS_503_OUTAGE -> HEALTHY_200
 curl -X POST http://localhost:8000/v1/chaos/configure \
@@ -216,7 +216,7 @@ curl -X POST http://localhost:8000/v1/chaos/configure \
   -d '{"route_path": "/mock-target/outage", "mode": "HEALTHY_200"}'
 
 # 4. Trigger Bulk DLQ Replay for the tenant
-curl -X POST "http://localhost:8000/v1/dlq/replay-batch?tenant_id=zeta_marketing_prod"
+curl -X POST "http://localhost:8000/v1/dlq/replay-batch?tenant_id=acme_payments_prod"
 
 # 5. Trigger worker dispatch and view Observability Dashboard
 curl -X POST http://localhost:8000/v1/workers/run-once

@@ -1,4 +1,4 @@
-import concurrent.futures
+﻿import concurrent.futures
 import sqlite3
 import unittest
 from datetime import datetime, timedelta, timezone
@@ -50,11 +50,11 @@ class TestPhase1CoreFoundation(unittest.TestCase):
 
     def test_02_idempotent_event_ingestion(self) -> None:
         req = EventIngestRequest(
-            tenant_id="zeta_marketing_prod",
+            tenant_id="acme_payments_prod",
             idempotency_key="idem_key_2026_0001",
             event_type="campaign.webhook.triggered",
             channel=ChannelType.WEBHOOK,
-            destination="https://api.customer-domain.com/webhooks/zeta",
+            destination="https://api.customer-domain.com/webhooks/orders",
             payload={"campaign_id": "cmp_901", "user_id": "usr_442"},
             max_retries=3,
         )
@@ -70,7 +70,7 @@ class TestPhase1CoreFoundation(unittest.TestCase):
         for i in range(40):
             self.repo.ingest_event(
                 EventIngestRequest(
-                    tenant_id="zeta_tenant_alpha",
+                    tenant_id="finverse_core",
                     idempotency_key=f"concurrent_idem_{i:04d}",
                     event_type="user.signup",
                     channel=ChannelType.WEBHOOK,
@@ -94,7 +94,7 @@ class TestPhase1CoreFoundation(unittest.TestCase):
 
     def test_04_exponential_backoff_dlq_transition_and_replay(self) -> None:
         req = EventIngestRequest(
-            tenant_id="zeta_tenant_beta",
+            tenant_id="nexus_logistics",
             idempotency_key="dlq_lifecycle_test_01",
             event_type="invoice.failed",
             channel=ChannelType.WEBHOOK,

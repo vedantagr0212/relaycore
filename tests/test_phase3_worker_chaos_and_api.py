@@ -1,4 +1,4 @@
-import concurrent.futures
+﻿import concurrent.futures
 from datetime import datetime, timedelta, timezone
 import sqlite3
 import unittest
@@ -49,7 +49,7 @@ class TestPhase3EndToEndWorkerChaosAndAPI(unittest.TestCase):
     def test_01_flaky_endpoint_auto_recovery_and_hmac_verification(self) -> None:
         status_code, ingested = self.controller.ingest_event_endpoint(
             {
-                "tenant_id": "zeta_cdp_prod",
+                "tenant_id": "finverse_checkout",
                 "idempotency_key": "flaky_idem_001",
                 "event_type": "customer.segment.entered",
                 "channel": "WEBHOOK",
@@ -63,7 +63,7 @@ class TestPhase3EndToEndWorkerChaosAndAPI(unittest.TestCase):
 
         dup_code, dup_resp = self.controller.ingest_event_endpoint(
             {
-                "tenant_id": "zeta_cdp_prod",
+                "tenant_id": "finverse_checkout",
                 "idempotency_key": "flaky_idem_001",
                 "event_type": "customer.segment.entered",
                 "channel": "WEBHOOK",
@@ -104,7 +104,7 @@ class TestPhase3EndToEndWorkerChaosAndAPI(unittest.TestCase):
     def test_02_outage_circuit_breaker_fast_fail_dlq_and_bulk_replay(self) -> None:
         _, ev1 = self.controller.ingest_event_endpoint(
             {
-                "tenant_id": "zeta_outage_tenant",
+                "tenant_id": "meridian_retail",
                 "idempotency_key": "outage_evt_1",
                 "event_type": "order.created",
                 "channel": "WEBHOOK",
@@ -125,7 +125,7 @@ class TestPhase3EndToEndWorkerChaosAndAPI(unittest.TestCase):
 
         _, ev2 = self.controller.ingest_event_endpoint(
             {
-                "tenant_id": "zeta_outage_tenant",
+                "tenant_id": "meridian_retail",
                 "idempotency_key": "outage_evt_2",
                 "event_type": "order.created",
                 "channel": "WEBHOOK",
@@ -145,7 +145,7 @@ class TestPhase3EndToEndWorkerChaosAndAPI(unittest.TestCase):
         self.controller.configure_chaos_route_endpoint("/mock-target/outage", "HEALTHY_200")
         self.clock.advance(20.0)
 
-        _, replay_res = self.controller.replay_bulk_dlq_endpoint(tenant_id="zeta_outage_tenant")
+        _, replay_res = self.controller.replay_bulk_dlq_endpoint(tenant_id="meridian_retail")
         self.assertEqual(replay_res["replayed_count"], 1)
 
         _, tick_recover = self.controller.run_worker_tick_endpoint(
@@ -153,13 +153,13 @@ class TestPhase3EndToEndWorkerChaosAndAPI(unittest.TestCase):
         )
         self.assertEqual(tick_recover["delivered_count"], 2)
 
-        _, dlq_after = self.controller.list_dlq_endpoint(tenant_id="zeta_outage_tenant")
+        _, dlq_after = self.controller.list_dlq_endpoint(tenant_id="meridian_retail")
         self.assertEqual(dlq_after["count"], 0)
 
     def test_03_fatal_422_routes_immediately_to_dlq_on_first_attempt(self) -> None:
         _, ev = self.controller.ingest_event_endpoint(
             {
-                "tenant_id": "zeta_schema_test",
+                "tenant_id": "atlas_billing",
                 "idempotency_key": "fatal_422_01",
                 "event_type": "billing.failed",
                 "channel": "WEBHOOK",
@@ -178,7 +178,7 @@ class TestPhase3EndToEndWorkerChaosAndAPI(unittest.TestCase):
 
     def test_04_multi_worker_concurrent_pool_across_all_channels(self) -> None:
         self.repo.ensure_tenant(
-            tenant_id="zeta_high_throughput",
+            tenant_id="velocity_commerce",
             rate_limit_capacity=100,
             rate_limit_refill_per_sec=100.0,
         )
@@ -192,7 +192,7 @@ class TestPhase3EndToEndWorkerChaosAndAPI(unittest.TestCase):
             }[ch]
             self.controller.ingest_event_endpoint(
                 {
-                    "tenant_id": "zeta_high_throughput",
+                    "tenant_id": "velocity_commerce",
                     "idempotency_key": f"multi_ch_{i:03d}",
                     "event_type": "notification.dispatched",
                     "channel": ch,
